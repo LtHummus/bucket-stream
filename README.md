@@ -21,6 +21,7 @@ All configuration is done via environment variables:
 | `TWITCH_ENDPOINT`                  | The Twitch endpoint you wish to use. If this is not set, the app will attempt to use the Twitch API to pull the Twitch ingestion endpoints + the user's stream key                                                                           |
 | `VIDEO_ENUMERATION_PERIOD_MINUTES` | How often should the app scan for new videos in the S3 bucket. If not set, defaults to 1440 minutes (24 hours). |
 | `NOTIFICATION_WEBHOOK_URL` | An optional URL to notify when a new video starts. The streamer will send an HTTP POST to this URL with a JSON dictionary with the video's title in the `name` field (e.g. `{"name":"some video title"}`.  |
+| `PORT` | The port to run the internal API on (see below)
 
 ### Getting a Token
 
@@ -29,3 +30,16 @@ To fill in later. But tl;dr is you can create an app in Twitch's dev portal and 
 Scopes required:
 * `channel:read:stream_key`
 * `user:edit:broadcast`
+
+## Internal API
+
+bucket-stream also runs a small HTTP server with several endpoints to control behavior. By default, the server listens on port 8080 (but can be changed with the `PORT` environment variable. The following requests are handled:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /ping` | Returns a simple ok message :) |
+| `GET /stats` | Gets stats about the current session. |
+| `PUT /continue/no` | Tells bucket-stream to exit once the current video finishes playing |
+| `PUT /continue/yes` | Tells bucket-stream to not exit once the current video finishes (essentially if you change your mind after the above command) |
+| `POST /enumerate` | Rescan the S3 bucket for new videos |
+

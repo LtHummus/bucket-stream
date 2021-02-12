@@ -53,7 +53,7 @@ func New(bucket string) *videoStorage {
 		"update_period_minutes": videoEnumerationPeriodMinutes,
 	}).Info("initializing update thread")
 
-	vs.enumerate()
+	vs.ForceEnumerate()
 
 
 	go func() {
@@ -62,7 +62,7 @@ func New(bucket string) *videoStorage {
 
 		for {
 			<-updateTicker.C
-			vs.enumerate()
+			vs.ForceEnumerate()
 		}
 	}()
 
@@ -78,10 +78,17 @@ func (vs *videoStorage) PickVideo() (string, io.ReadCloser) {
 	return winnerVideo, vs.getBuffer(winnerVideo)
 }
 
-// enumerate retrieves all the objects in a bucket and keeps track of all the objects with keys ending in .flv. This
+func (vs *videoStorage) GetVideoCount() int {
+	vs.Lock()
+	defer vs.Unlock()
+
+	return vs.videoCount
+}
+
+// ForceEnumerate retrieves all the objects in a bucket and keeps track of all the objects with keys ending in .flv. This
 // is designed to be run at construction of the struct + every once in a while (defaults every 24 hours, but can be
 // customized).
-func (vs *videoStorage) enumerate() {
+func (vs *videoStorage) ForceEnumerate() {
 	log.WithField("bucket", vs.bucket).Info("starting video enumeration")
 	res := make([]string, 0)
 

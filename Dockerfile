@@ -10,6 +10,8 @@ FROM alpine:3.13
 
 COPY --from=0 /tmp/streamer streamer
 
+EXPOSE 8080/tcp
+
 RUN /bin/sh -c "chmod +x streamer; apk add ffmpeg"
 
 CMD "./streamer"

@@ -10,6 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/lthummus/bucket-stream/notifier"
+	"github.com/lthummus/bucket-stream/server"
 	"github.com/lthummus/bucket-stream/streamer"
 	"github.com/lthummus/bucket-stream/twitch"
 	"github.com/lthummus/bucket-stream/videostorage"
@@ -35,8 +36,8 @@ func main() {
 	authToken := os.Getenv("TWITCH_AUTH_TOKEN")
 
 	twitchApi := &twitch.Api{
-		ClientId:      clientId,
-		AuthToken:     authToken,
+		ClientId:  clientId,
+		AuthToken: authToken,
 	}
 
 	// initialize the twitch API
@@ -61,7 +62,7 @@ func main() {
 	}
 
 	// initialize video storage
-	s := videostorage.New(bucketName)
+	storage := videostorage.New(bucketName)
 	log.WithField("bucket", bucketName).Info("video storage initialized")
 
 	var notifiers []notifier.Notifier
@@ -72,11 +73,24 @@ func main() {
 		})
 	}
 
+	// start streamer
+	strm := streamer.Streamer{
+		FfmpegPath:     ffmpegPath,
+		TwitchEndpoint: twitchEndpoint,
+	}
+
+	// start server
+	srv := server.Server{
+		Storage:  storage,
+		Streamer: &strm,
+	}
+	go srv.StartServer()
+
 	// main loop of the app
 	for {
 		// pick a video
 		log.Info("starting cycle")
-		pickedVideo, buf := s.PickVideo()
+		pickedVideo, buf := storage.PickVideo()
 		log.WithFields(log.Fields{
 			"video": pickedVideo,
 		}).Info("winner picked")
@@ -93,10 +107,15 @@ func main() {
 		log.WithFields(log.Fields{
 			"video": pickedVideo,
 		}).Info("opened stream")
-		streamer.StartFfmpegStream(ffmpegPath, twitchEndpoint, pickedVideo, buf)
+		strm.StartFfmpegStream(pickedVideo, buf)
 		log.WithFields(log.Fields{
 			"video": pickedVideo,
 		}).Info("cycle complete")
+
+		if !srv.ShouldContinue() {
+			log.Info("server says we should stop. so stopping")
+			break
+		}
 	}
 
 }
