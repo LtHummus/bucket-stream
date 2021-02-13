@@ -9,6 +9,8 @@ ffmpeg -i input.mkv -c:v libx264 -preset medium -b:v 3000k -maxrate 3000k -bufsi
 ```
 (taken from https://trac.ffmpeg.org/wiki/EncodingForStreamingSites)
 
+You might find some usefulness out of [bucket-filler](https://github.com/LtHummus/bucket-filler), which is what I used to prepare all the video files for my project.
+
 ## Configuration
 All configuration is done via environment variables:
 
