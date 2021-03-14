@@ -1,20 +1,18 @@
 package videostorage
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
 	"io"
 	"math/rand"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
-
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 type videoStorage struct {
@@ -34,18 +32,20 @@ var _ Storage = &videoStorage{}
 // construct the struct as well as kick off an update thread that periodically polls the S3 bucket for videos.
 // Any object without the .flv extension is ignored. The polling period defaults to once every 24 hours, but can
 // be overridden by the VIDEO_ENUMERATION_PERIOD_MINUTES environment variable
-func New(bucket string) *videoStorage {
-	manager := s3.New(session.Must(session.NewSession()))
+func New(bucket, customEndpoint string, videoEnumerationPeriodMinutes int) *videoStorage {
+	var sess *session.Session
+	if customEndpoint == "" {
+		sess = session.Must(session.NewSession())
+	} else {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Endpoint: &customEndpoint,
+		}))
+	}
+	manager := s3.New(sess)
 	vs := &videoStorage{
 		bucket:     bucket,
 		client:     manager,
 		downloader: s3manager.NewDownloaderWithClient(manager),
-	}
-
-	videoEnumerationPeriodMinutes := 24 * 60
-
-	if enumerationUpdate, err := strconv.Atoi(os.Getenv("VIDEO_ENUMERATION_PERIOD_MINUTES")); err == nil {
-		videoEnumerationPeriodMinutes = enumerationUpdate
 	}
 
 	log.WithFields(log.Fields{

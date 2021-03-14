@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type Server struct {
 
 	Storage  videostorage.Storage
 	Streamer *streamer.Streamer
+	Port     int
 
 	shouldContinue bool
 	start          time.Time
@@ -72,7 +74,7 @@ func (s *Server) StartServer() {
 		})
 	})
 
-	err := r.Run()
+	err := r.Run(fmt.Sprintf(":%d", s.Port))
 	if err != nil {
 		log.WithError(err).Error("web server failed")
 	}

@@ -1,8 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"github.com/spf13/viper"
 	"math/rand"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -16,7 +17,60 @@ import (
 	"github.com/lthummus/bucket-stream/videostorage"
 )
 
+type config struct {
+	ffmpegPath               string
+	twitchClientId           string
+	twitchAuthToken          string
+	bucketName               string
+	s3EndpointOverride       string
+	twitchEndpointOverride   string
+	notificationWebhookUrl   string
+	enumerationPeriodMinutes int
+	serverPort               int
+}
+
+func readConfig() (config, error) {
+	viper.SetConfigName("bucket-stream")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("/config")
+	viper.AddConfigPath(".")
+
+	viper.SetDefault("ffmpegPath", "ffmpeg")
+	viper.SetDefault("serverPort", 8080)
+	viper.SetDefault("storage.enumerationPeriodMinutes", 1440)
+
+	viper.SetEnvPrefix("BUCKET_STREAM")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			// nop
+		} else {
+			return config{}, err
+		}
+	}
+
+	return config{
+		ffmpegPath:               viper.GetString("ffmpeg_path"),
+		twitchClientId:           viper.GetString("twitch.client_id"),
+		twitchAuthToken:          viper.GetString("twitch.auth_token"),
+		bucketName:               viper.GetString("storage.bucket_name"),
+		s3EndpointOverride:       viper.GetString("storage.endpoint"),
+		twitchEndpointOverride:   viper.GetString("twitch.endpoint"),
+		notificationWebhookUrl:   viper.GetString("notification_webhook_url"),
+		enumerationPeriodMinutes: viper.GetInt("storage.enumeration_period_minutes"),
+		serverPort:               viper.GetInt("server_port"),
+	}, nil
+}
+
 func main() {
+	config, err := readConfig()
+	if err != nil {
+		panic(fmt.Sprintf("could not read config: %s", err))
+	}
+
 	// set up logging and initialize the RNG
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
@@ -24,33 +78,24 @@ func main() {
 	log.Info("hello world!")
 	rand.Seed(time.Now().Unix())
 
-	// get the ffmpeg path
-	ffmpegPath := os.Getenv("FFMPEG_PATH")
-	if ffmpegPath == "" {
-		log.Warn("FFMPEG_PATH not set. I hope `ffmpeg` is in your $PATH!")
-		ffmpegPath = "ffmpeg"
-	}
-
-	// read twitch configuration data
-	clientId := os.Getenv("TWITCH_CLIENT_ID")
-	authToken := os.Getenv("TWITCH_AUTH_TOKEN")
+	log.WithField("ffmpegPath", config.ffmpegPath).Info("ffmpeg path")
 
 	twitchApi := &twitch.Api{
-		ClientId:  clientId,
-		AuthToken: authToken,
+		ClientId:  config.twitchClientId,
+		AuthToken: config.twitchAuthToken,
 	}
 
 	// initialize the twitch API
 	twitchApi.GetUserInfo()
 
 	// read the source bucket
-	bucketName := os.Getenv("VIDEO_BUCKET_NAME")
+	bucketName := config.bucketName
 	if bucketName == "" {
-		log.Fatal("environment variable VIDEO_BUCKET_NAME is empty")
+		log.Fatal("video bucket name not set")
 	}
 
 	// read the twitch endpoint URL (which includes the stream key -- see README for more details)
-	twitchEndpoint := os.Getenv("TWITCH_ENDPOINT")
+	twitchEndpoint := config.twitchEndpointOverride
 	if twitchEndpoint == "" {
 		potentialEndpoint := twitchApi.GetTwitchEndpointUrl()
 		if potentialEndpoint == "" {
@@ -58,15 +103,15 @@ func main() {
 		}
 		twitchEndpoint = potentialEndpoint
 	} else {
-		log.Info("using TWITCH_ENDPOINT environment variable")
+		log.Info("using explicit twitch endpoint")
 	}
 
 	// initialize video storage
-	storage := videostorage.New(bucketName)
+	storage := videostorage.New(bucketName, config.s3EndpointOverride, config.enumerationPeriodMinutes)
 	log.WithField("bucket", bucketName).Info("video storage initialized")
 
 	var notifiers []notifier.Notifier
-	if webhookUrl := os.Getenv("NOTIFICATION_WEBHOOK_URL"); webhookUrl != "" {
+	if webhookUrl := config.notificationWebhookUrl; webhookUrl != "" {
 		log.Info("initializing webhook notifier")
 		notifiers = append(notifiers, &notifier.Webhook{
 			Url: webhookUrl,
@@ -75,7 +120,7 @@ func main() {
 
 	// start streamer
 	strm := streamer.Streamer{
-		FfmpegPath:     ffmpegPath,
+		FfmpegPath:     config.ffmpegPath,
 		TwitchEndpoint: twitchEndpoint,
 	}
 
@@ -83,6 +128,7 @@ func main() {
 	srv := server.Server{
 		Storage:  storage,
 		Streamer: &strm,
+		Port:     config.serverPort,
 	}
 	go srv.StartServer()
 
