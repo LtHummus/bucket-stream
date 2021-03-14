@@ -25,6 +25,7 @@ twitch:
 storage:
   bucket_name: video-storage-bucket-name
   endpoint: http://s3.compatible.endpoint.example.com # optional: useful if using some other S3-comptable object storage
+  enumeration_period_minutes: 60 # optional: defaults to 1440 minutes (24 hours)
 
 notification_webhook_url: http://notification.endpoint.example.com # optional: only needed if webhook updates are required
 
@@ -33,16 +34,18 @@ server_port: 9876 # optional: defaults to 8080 if not given
 
 Or you can use environment variables:
 
-| Environment Variable Name                        | Description                                                                                                     |
-|--------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| `BUCKET_STREAM_FFMPEG_PATH`                      | Path to the `ffmpeg` executable. If this is not set, it assumes `ffmpeg` is in your `$PATH`                     |
-| `BUCKET_STREAM_TWITCH_CLIENT_ID`                 | The client ID for the Twitch API (see below for more details).                                                  |
-| `BUCKET_STREAM_TWITCH_AUTH_TOKEN`                | The auth token for the Twitch API (again, see below).                                                           |
-| `BUCKET_STREAM_VIDEO_BUCKET_NAME`                | Name of the S3 bucket to source videos from.                                                                    |
-| `BUCKET_STREAM_TWITCH_ENDPOINT`                  | The Twitch endpoint you wish to use. If this is not set, the app will attempt to use the Twitch API to pull the Twitch ingestion endpoints + the user's stream key                                                                           |
-| `BUCKET_STREAM_VIDEO_ENUMERATION_PERIOD_MINUTES` | How often should the app scan for new videos in the S3 bucket. If not set, defaults to 1440 minutes (24 hours). |
-| `BUCKET_STREAM_NOTIFICATION_WEBHOOK_URL`         | An optional URL to notify when a new video starts. The streamer will send an HTTP POST to this URL with a JSON dictionary with the video's title in the `name` field (e.g. `{"name":"some video title"}`.  |
-| `BUCKET_STREAM_PORT`                             | The port to run the internal API on (see below)
+| Environment Variable Name                          | Description                                                                                                     |
+|----------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `BUCKET_STREAM_FFMPEG_PATH`                        | Path to the `ffmpeg` executable. If this is not set, it assumes `ffmpeg` is in your `$PATH`                     |
+| `BUCKET_STREAM_TWITCH_CLIENT_ID`                   | The client ID for the Twitch API (see below for more details).                                                  |
+| `BUCKET_STREAM_TWITCH_AUTH_TOKEN`                  | The auth token for the Twitch API (again, see below).                                                           |
+| `BUCKET_STREAM_TWITCH_ENDPOINT`                    | Twitch endpoint to use. Optional. If not set, uses the closest endpoint |
+| `BUCKET_STREAM_STORAGE_BUCKET_NAME`                | Name of the S3 bucket to source videos from.                                                                    |
+| `BUCKET_STREAM_STORAGE_ENDPOINT`                   | Endpoint to use to contact S3 |
+| `BUCKET_STREAM_STORAGE_ENUMERATION_PERIOD_MINUTES` | How often should the app scan for new videos in the S3 bucket. If not set, defaults to 1440 minutes (24 hours). |
+| `BUCKET_STREAM_TWITCH_ENDPOINT`                    | The Twitch endpoint you wish to use. If this is not set, the app will attempt to use the Twitch API to pull the Twitch ingestion endpoints + the user's stream key                                                                           |
+| `BUCKET_STREAM_NOTIFICATION_WEBHOOK_URL`           | An optional URL to notify when a new video starts. The streamer will send an HTTP POST to this URL with a JSON dictionary with the video's title in the `name` field (e.g. `{"name":"some video title"}`.  |
+| `BUCKET_STREAM_SERVER_PORT`                        | The port to run the internal API on (see below)
 
 ### Getting a Token
 
