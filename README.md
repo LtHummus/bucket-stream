@@ -12,26 +12,23 @@ ffmpeg -i input.mkv -c:v libx264 -preset medium -b:v 3000k -maxrate 3000k -bufsi
 You might find some usefulness out of [bucket-filler](https://github.com/LtHummus/bucket-filler), which is what I used to prepare all the video files for my project.
 
 ## Configuration
-All configuration is done via environment variables:
+All configuration is done via a YAML file, `bucket-stream.yaml`:
 
-| Environment Variable Name          | Description                                                                                                     |
-|------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| `FFMPEG_PATH`                      | Path to the `ffmpeg` executable. If this is not set, it assumes `ffmpeg` is in your `$PATH`                     |
-| `TWITCH_CLIENT_ID`                 | The client ID for the Twitch API (see below for more details).                                                  |
-| `TWITCH_AUTH_TOKEN`                | The auth token for the Twitch API (again, see below).                                                           |
-| `VIDEO_BUCKET_NAME`                | Name of the S3 bucket to source videos from.                                                                    |
-| `TWITCH_ENDPOINT`                  | The Twitch endpoint you wish to use. If this is not set, the app will attempt to use the Twitch API to pull the Twitch ingestion endpoints + the user's stream key                                                                           |
-| `VIDEO_ENUMERATION_PERIOD_MINUTES` | How often should the app scan for new videos in the S3 bucket. If not set, defaults to 1440 minutes (24 hours). |
-| `NOTIFICATION_WEBHOOK_URL` | An optional URL to notify when a new video starts. The streamer will send an HTTP POST to this URL with a JSON dictionary with the video's title in the `name` field (e.g. `{"name":"some video title"}`.  |
-| `PORT` | The port to run the internal API on (see below)
+```yaml
+notification_urls: # optional
+  - https://example.com
+s3:
+  bucket: bucket-with-your-videos
+twitch:
+  auth_token: twitch_access_token_can_be_blank
+  client_id: twitch_client_id
+  client_secret: twitch_client_secret
+  refresh_token: twitch_refresh_token_can_be_blank
+```
 
 ### Getting a Token
 
-To fill in later. But tl;dr is you can create an app in Twitch's dev portal and use https://twitchapps.com/tokengen/ to get a token.
-
-Scopes required:
-* `channel:read:stream_key`
-* `user:edit:broadcast`
+Run the program with the single command line arugment `auth`. This will give a URL you can go to in order to authenticate your twitch account. The program will ask for an authorization code. Once auth'd, twitch will attempt to redirect you to http://localhost/?code=<some_string_here>. That string is what the program is looking for. The program will write your token + refresh token. Then run the app normally.
 
 ## Internal API
 
