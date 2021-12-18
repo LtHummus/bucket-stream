@@ -7,27 +7,145 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+)
+
+const (
+	twitchClientIdConfKey     = "twitch.client_id"
+	twitchAuthTokenConfKey    = "twitch.auth_token"
+	twitchRefreshTokenConfKey = "twitch.refresh_token"
+	twitchClientSecretConfKey = "twitch.client_secret"
 )
 
 type Api struct {
-	ClientId      string
-	AuthToken     string
 	BroadcasterId int
 }
 
+func getTwitchClientId() string {
+	return viper.GetString(twitchClientIdConfKey)
+}
+
+func getTwitchAuthToken() string {
+	return viper.GetString(twitchAuthTokenConfKey)
+}
+
+func getTwitchRefreshToken() string {
+	return viper.GetString(twitchRefreshTokenConfKey)
+}
+
+func getTwitchClientSecret() string {
+	return viper.GetString(twitchClientSecretConfKey)
+}
+
+func updateTwitchCredentials(accessToken string, refreshToken string) {
+	viper.Set(twitchAuthTokenConfKey, accessToken)
+	viper.Set(twitchRefreshTokenConfKey, refreshToken)
+	err := viper.WriteConfig()
+	if err != nil {
+		log.WithError(err).Warn("could not write config")
+	} else {
+		log.Info("updated twitch credentials written")
+	}
+}
+
 var client = http.Client{}
+
+// refreshTwitchToken uses our oauth2 client credentials to refresh the access token for our user. This would probably
+// be better served with a real oauth2 client, but whatever...
+func (a *Api) refreshTwitchToken() error {
+	log.Info("refreshing twitch tokens")
+
+	payload := url.Values{}
+	payload.Set("grant_type", "refresh_token")
+	payload.Set("refresh_token", getTwitchRefreshToken())
+	payload.Set("client_id", getTwitchClientId())
+	payload.Set("client_secret", getTwitchClientSecret())
+
+	req, err := http.NewRequest(http.MethodPost, "https://id.twitch.tv/oauth2/token", strings.NewReader(payload.Encode()))
+	if err != nil {
+		log.WithError(err).Warn("could not refresh token")
+		return err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.WithError(err).Warn("could not do http request")
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.WithField("status_code", resp.Status).Warn("error from twitch server")
+		return errors.New("twitch auth failure")
+	}
+
+	var refreshResult struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&refreshResult)
+	if err != nil {
+		log.WithError(err).Warn("could not decode twitch token response")
+		return err
+	}
+
+	updateTwitchCredentials(refreshResult.AccessToken, refreshResult.RefreshToken)
+	log.Info("twitch tokens updated")
+
+	return nil
+}
+
+func validateTwitchToken() (bool, error) {
+	req, err := http.NewRequest(http.MethodGet, "https://id.twitch.tv/oauth2/validate", nil)
+	if err != nil {
+		log.WithError(err).Warn("could not create validation payload")
+		return false, err
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", getTwitchAuthToken()))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.WithError(err).Warn("error doing validation request")
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, nil
+	}
+
+	return true, nil
+
+}
 
 // doTwitchRequest contains all the common logic for performing an authenticated request to the Twitch API and decoding
 // the response in to the struct provided from the JSON response. If any errors happen, an error will be returned. If
 // the HTTP response code is 204 NO CONTENT, then the function returns without attempting to decode the body and `nil` can
 // be passed in as the second parameter. This function assumes that client id and auth token is set.
 func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
-	req.Header.Set("Client-id", a.ClientId)
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.AuthToken))
+	valid, err := validateTwitchToken()
+	if err != nil {
+		log.WithError(err).Warn("could not validate twitch token")
+		return err
+	}
+
+	if !valid {
+		err := a.refreshTwitchToken()
+		if err != nil {
+			log.WithError(err).Warn("could not refresh token")
+			return err
+		}
+	}
+
+	req.Header.Set("Client-id", getTwitchClientId())
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", getTwitchAuthToken()))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -50,10 +168,10 @@ func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
 		return nil
 	}
 
-	if resp.StatusCode != http.StatusOK  {
+	if resp.StatusCode != http.StatusOK {
 		log.WithFields(log.Fields{
 			"status_code": resp.StatusCode,
-			"body": string(body),
+			"body":        string(body),
 		}).Error("error making http request")
 		return errors.New("error making http request")
 	}
@@ -69,7 +187,7 @@ func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
 
 // GetUserInfo updates the BroadcasterId for the Api struct for the user that owns the given AuthToken.
 func (a *Api) GetUserInfo() {
-	if a.ClientId == "" || a.AuthToken == "" {
+	if getTwitchClientId() == "" || getTwitchAuthToken() == "" {
 		log.Warn("twitch api config not set...skipping getting user info")
 		return
 	}
@@ -105,7 +223,7 @@ func (a *Api) GetUserInfo() {
 
 	log.WithFields(log.Fields{
 		"broadcaster_id": a.BroadcasterId,
-		"account_name": payload.Data[0].DisplayName,
+		"account_name":   payload.Data[0].DisplayName,
 	}).Info("set broadcaster id")
 }
 
@@ -127,7 +245,7 @@ func (a *Api) GetTwitchEndpointUrl() string {
 
 // GetClosestTwitchEndpoint gets the closest ingestion endpoint URL template from Twitch
 func (a *Api) GetClosestTwitchEndpoint() string {
-	if a.ClientId == "" || a.AuthToken == "" || a.BroadcasterId == 0 {
+	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
 		log.Warn("twitch api config not set...returning empty string")
 		return ""
 	}
@@ -165,7 +283,7 @@ func (a *Api) GetClosestTwitchEndpoint() string {
 
 // GetStreamKey fetches the user's stream key from the Twitch API
 func (a *Api) GetStreamKey() string {
-	if a.ClientId == "" || a.AuthToken == "" || a.BroadcasterId == 0 {
+	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
 		log.Warn("twitch api config not set...returning empty string")
 		return ""
 	}
@@ -195,7 +313,7 @@ func (a *Api) GetStreamKey() string {
 
 // UpdateStreamTitle sets the title of the user's stream to the given stream
 func (a *Api) UpdateStreamTitle(title string) {
-	if a.ClientId == "" || a.AuthToken == "" || a.BroadcasterId == 0 {
+	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
 		log.WithField("video", title).Warn("twitch api config not set...skipping title update")
 		return
 	}

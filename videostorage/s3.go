@@ -3,18 +3,16 @@ package videostorage
 import (
 	"io"
 	"math/rand"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 
-
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 type videoStorage struct {
@@ -44,17 +42,16 @@ func New(bucket string) *videoStorage {
 
 	videoEnumerationPeriodMinutes := 24 * 60
 
-	if enumerationUpdate, err := strconv.Atoi(os.Getenv("VIDEO_ENUMERATION_PERIOD_MINUTES")); err == nil {
-		videoEnumerationPeriodMinutes = enumerationUpdate
+	if configPeriod := viper.GetInt("video_enumeration_period_minutes"); configPeriod != 0 {
+		videoEnumerationPeriodMinutes = configPeriod
 	}
 
 	log.WithFields(log.Fields{
-		"bucket": bucket,
+		"bucket":                bucket,
 		"update_period_minutes": videoEnumerationPeriodMinutes,
 	}).Info("initializing update thread")
 
 	vs.ForceEnumerate()
-
 
 	go func() {
 		log.WithField("bucket", vs.bucket).Info("starting update background thread")

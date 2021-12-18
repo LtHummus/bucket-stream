@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"path"
 	"strings"
 	"time"
 
+	"github.com/lthummus/bucket-stream/config"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 
 	"github.com/lthummus/bucket-stream/notifier"
 	"github.com/lthummus/bucket-stream/server"
@@ -15,6 +18,24 @@ import (
 	"github.com/lthummus/bucket-stream/twitch"
 	"github.com/lthummus/bucket-stream/videostorage"
 )
+
+func handleAuth() {
+	fmt.Printf("handling auth...\n")
+	fmt.Printf("go to\n%s\n\n", twitch.GenerateAuthUrl())
+	fmt.Printf("Authorization code: ")
+
+	var code string
+	_, err := fmt.Scanf("%s", &code)
+	if err != nil {
+		log.WithError(err).Warn("could not read input")
+	}
+
+	err = twitch.Handshake(code)
+	if err != nil {
+		log.WithError(err).Warn("could not update tokens")
+	}
+
+}
 
 func main() {
 	// set up logging and initialize the RNG
@@ -24,33 +45,35 @@ func main() {
 	log.Info("hello world!")
 	rand.Seed(time.Now().Unix())
 
+	config.ReadConfig()
+
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		handleAuth()
+		twitchApi := &twitch.Api{}
+		twitchApi.GetUserInfo()
+		os.Exit(0)
+	}
+
 	// get the ffmpeg path
-	ffmpegPath := os.Getenv("FFMPEG_PATH")
+	ffmpegPath := viper.GetString("ffmpeg.path")
 	if ffmpegPath == "" {
 		log.Warn("FFMPEG_PATH not set. I hope `ffmpeg` is in your $PATH!")
 		ffmpegPath = "ffmpeg"
 	}
 
-	// read twitch configuration data
-	clientId := os.Getenv("TWITCH_CLIENT_ID")
-	authToken := os.Getenv("TWITCH_AUTH_TOKEN")
-
-	twitchApi := &twitch.Api{
-		ClientId:  clientId,
-		AuthToken: authToken,
-	}
+	twitchApi := &twitch.Api{}
 
 	// initialize the twitch API
 	twitchApi.GetUserInfo()
 
 	// read the source bucket
-	bucketName := os.Getenv("VIDEO_BUCKET_NAME")
+	bucketName := viper.GetString("s3.bucket")
 	if bucketName == "" {
 		log.Fatal("environment variable VIDEO_BUCKET_NAME is empty")
 	}
 
 	// read the twitch endpoint URL (which includes the stream key -- see README for more details)
-	twitchEndpoint := os.Getenv("TWITCH_ENDPOINT")
+	twitchEndpoint := viper.GetString("twitch.endpoint")
 	if twitchEndpoint == "" {
 		potentialEndpoint := twitchApi.GetTwitchEndpointUrl()
 		if potentialEndpoint == "" {
@@ -58,18 +81,19 @@ func main() {
 		}
 		twitchEndpoint = potentialEndpoint
 	} else {
-		log.Info("using TWITCH_ENDPOINT environment variable")
+		log.Info("using twitch.endpoint from config")
 	}
 
 	// initialize video storage
 	storage := videostorage.New(bucketName)
 	log.WithField("bucket", bucketName).Info("video storage initialized")
 
+	notifierURLs := viper.GetStringSlice("notification_urls")
+
 	var notifiers []notifier.Notifier
-	if webhookUrl := os.Getenv("NOTIFICATION_WEBHOOK_URL"); webhookUrl != "" {
-		log.Info("initializing webhook notifier")
+	for _, curr := range notifierURLs {
 		notifiers = append(notifiers, &notifier.Webhook{
-			Url: webhookUrl,
+			Url: curr,
 		})
 	}
 
