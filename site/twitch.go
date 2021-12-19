@@ -1,4 +1,4 @@
-package twitch
+package site
 
 import (
 	"bytes"
@@ -11,40 +11,36 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lthummus/bucket-stream/config"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
-const (
-	twitchClientIdConfKey     = "twitch.client_id"
-	twitchAuthTokenConfKey    = "twitch.auth_token"
-	twitchRefreshTokenConfKey = "twitch.refresh_token"
-	twitchClientSecretConfKey = "twitch.client_secret"
-)
-
-type Api struct {
+type Twitch struct {
 	BroadcasterId int
 }
 
+var _ Api = (*Twitch)(nil)
+
 func getTwitchClientId() string {
-	return viper.GetString(twitchClientIdConfKey)
+	return viper.GetString(config.TwitchClientIdConfKey)
 }
 
 func getTwitchAuthToken() string {
-	return viper.GetString(twitchAuthTokenConfKey)
+	return viper.GetString(config.TwitchAuthTokenConfKey)
 }
 
 func getTwitchRefreshToken() string {
-	return viper.GetString(twitchRefreshTokenConfKey)
+	return viper.GetString(config.TwitchRefreshTokenConfKey)
 }
 
 func getTwitchClientSecret() string {
-	return viper.GetString(twitchClientSecretConfKey)
+	return viper.GetString(config.TwitchClientSecretConfKey)
 }
 
 func updateTwitchCredentials(accessToken string, refreshToken string) {
-	viper.Set(twitchAuthTokenConfKey, accessToken)
-	viper.Set(twitchRefreshTokenConfKey, refreshToken)
+	viper.Set(config.TwitchAuthTokenConfKey, accessToken)
+	viper.Set(config.TwitchRefreshTokenConfKey, refreshToken)
 	err := viper.WriteConfig()
 	if err != nil {
 		log.WithError(err).Warn("could not write config")
@@ -57,7 +53,7 @@ var client = http.Client{}
 
 // refreshTwitchToken uses our oauth2 client credentials to refresh the access token for our user. This would probably
 // be better served with a real oauth2 client, but whatever...
-func (a *Api) refreshTwitchToken() error {
+func (a *Twitch) refreshTwitchToken() error {
 	log.Info("refreshing twitch tokens")
 
 	payload := url.Values{}
@@ -129,7 +125,7 @@ func validateTwitchToken() (bool, error) {
 // the response in to the struct provided from the JSON response. If any errors happen, an error will be returned. If
 // the HTTP response code is 204 NO CONTENT, then the function returns without attempting to decode the body and `nil` can
 // be passed in as the second parameter. This function assumes that client id and auth token is set.
-func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
+func (a *Twitch) doTwitchRequest(req *http.Request, res interface{}) error {
 	valid, err := validateTwitchToken()
 	if err != nil {
 		log.WithError(err).Warn("could not validate twitch token")
@@ -185,8 +181,8 @@ func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
 	return nil
 }
 
-// GetUserInfo updates the BroadcasterId for the Api struct for the user that owns the given AuthToken.
-func (a *Api) GetUserInfo() {
+// Initialize updates the BroadcasterId for the Twitch struct for the user that owns the given AuthToken.
+func (a *Twitch) Initialize() {
 	if getTwitchClientId() == "" || getTwitchAuthToken() == "" {
 		log.Warn("twitch api config not set...skipping getting user info")
 		return
@@ -227,14 +223,14 @@ func (a *Api) GetUserInfo() {
 	}).Info("set broadcaster id")
 }
 
-// GetTwitchEndpointUrl returns a complete endpoint URL with the stream key embedded.
-func (a *Api) GetTwitchEndpointUrl() string {
-	endpointUrl := a.GetClosestTwitchEndpoint()
+// GetEndpointUrl returns a complete endpoint URL with the stream key embedded.
+func (a *Twitch) GetEndpointUrl() string {
+	endpointUrl := a.getClosestTwitchEndpoint()
 	if endpointUrl == "" {
 		return ""
 	}
 
-	streamKey := a.GetStreamKey()
+	streamKey := a.getStreamKey()
 	if streamKey == "" {
 		return ""
 	}
@@ -243,8 +239,8 @@ func (a *Api) GetTwitchEndpointUrl() string {
 	return strings.Replace(endpointUrl, "{stream_key}", streamKey, 1)
 }
 
-// GetClosestTwitchEndpoint gets the closest ingestion endpoint URL template from Twitch
-func (a *Api) GetClosestTwitchEndpoint() string {
+// getClosestTwitchEndpoint gets the closest ingestion endpoint URL template from Twitch
+func (a *Twitch) getClosestTwitchEndpoint() string {
 	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
 		log.Warn("twitch api config not set...returning empty string")
 		return ""
@@ -281,8 +277,8 @@ func (a *Api) GetClosestTwitchEndpoint() string {
 	return bestEndpointUrl
 }
 
-// GetStreamKey fetches the user's stream key from the Twitch API
-func (a *Api) GetStreamKey() string {
+// getStreamKey fetches the user's stream key from the Twitch API
+func (a *Twitch) getStreamKey() string {
 	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
 		log.Warn("twitch api config not set...returning empty string")
 		return ""
@@ -312,7 +308,7 @@ func (a *Api) GetStreamKey() string {
 }
 
 // UpdateStreamTitle sets the title of the user's stream to the given stream
-func (a *Api) UpdateStreamTitle(title string) {
+func (a *Twitch) UpdateStreamTitle(title string) {
 	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
 		log.WithField("video", title).Warn("twitch api config not set...skipping title update")
 		return
