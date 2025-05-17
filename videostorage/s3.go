@@ -1,43 +1,50 @@
 package videostorage
 
 import (
+	"context"
 	"io"
 	"math/rand"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
-type videoStorage struct {
+type VideoStorage struct {
 	sync.Mutex
 
 	bucket     string
-	client     *s3.S3
-	downloader *s3manager.Downloader
+	client     *s3.Client
+	downloader *manager.Downloader
 
 	videos     *[]string
 	videoCount int
 }
 
-var _ Storage = &videoStorage{}
+var _ Storage = &VideoStorage{}
 
 // New constructs a new video storage that reads from an S3 bucket given by parameter. This constructor will
 // construct the struct as well as kick off an update thread that periodically polls the S3 bucket for videos.
 // Any object without the .flv extension is ignored. The polling period defaults to once every 24 hours, but can
 // be overridden by the VIDEO_ENUMERATION_PERIOD_MINUTES environment variable
-func New(bucket string) *videoStorage {
-	manager := s3.New(session.Must(session.NewSession()))
-	vs := &videoStorage{
+func New(ctx context.Context, bucket string) *VideoStorage {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	s3Client := s3.NewFromConfig(cfg)
+
+	vs := &VideoStorage{
 		bucket:     bucket,
-		client:     manager,
-		downloader: s3manager.NewDownloaderWithClient(manager),
+		client:     s3Client,
+		downloader: manager.NewDownloader(s3Client),
 	}
 
 	videoEnumerationPeriodMinutes := 24 * 60
@@ -51,7 +58,7 @@ func New(bucket string) *videoStorage {
 		"update_period_minutes": videoEnumerationPeriodMinutes,
 	}).Info("initializing update thread")
 
-	vs.ForceEnumerate()
+	vs.ForceEnumerate(ctx)
 
 	go func() {
 		log.WithField("bucket", vs.bucket).Info("starting update background thread")
@@ -59,23 +66,23 @@ func New(bucket string) *videoStorage {
 
 		for {
 			<-updateTicker.C
-			vs.ForceEnumerate()
+			vs.ForceEnumerate(context.Background())
 		}
 	}()
 
 	return vs
 }
 
-func (vs *videoStorage) PickVideo() (string, io.ReadCloser) {
+func (vs *VideoStorage) PickVideo(ctx context.Context) (string, io.ReadCloser) {
 	vs.Lock()
 	winnerIdx := rand.Intn(vs.videoCount)
 	winnerVideo := (*vs.videos)[winnerIdx]
 	vs.Unlock()
 
-	return winnerVideo, vs.getBuffer(winnerVideo)
+	return winnerVideo, vs.getBuffer(ctx, winnerVideo)
 }
 
-func (vs *videoStorage) GetVideoCount() int {
+func (vs *VideoStorage) GetVideoCount() int {
 	vs.Lock()
 	defer vs.Unlock()
 
@@ -85,14 +92,14 @@ func (vs *videoStorage) GetVideoCount() int {
 // ForceEnumerate retrieves all the objects in a bucket and keeps track of all the objects with keys ending in .flv. This
 // is designed to be run at construction of the struct + every once in a while (defaults every 24 hours, but can be
 // customized).
-func (vs *videoStorage) ForceEnumerate() {
+func (vs *VideoStorage) ForceEnumerate(ctx context.Context) {
 	log.WithField("bucket", vs.bucket).Info("starting video enumeration")
 	res := make([]string, 0)
 
 	var continuationToken *string
 	for {
 		log.WithField("continuation_token", continuationToken).Debug("sending listobjects request")
-		lor, err := vs.client.ListObjectsV2(&s3.ListObjectsV2Input{
+		lor, err := vs.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            &vs.bucket,
 			ContinuationToken: continuationToken,
 		})
@@ -129,8 +136,8 @@ func (vs *videoStorage) ForceEnumerate() {
 }
 
 // getBuffer pulls the object info for the given key and opens an `io.ReadCloser` for the object
-func (vs *videoStorage) getBuffer(key string) io.ReadCloser {
-	res, err := vs.client.GetObject(&s3.GetObjectInput{
+func (vs *VideoStorage) getBuffer(ctx context.Context, key string) io.ReadCloser {
+	res, err := vs.client.GetObject(ctx, &s3.GetObjectInput{
 		Key:    &key,
 		Bucket: &vs.bucket,
 	})

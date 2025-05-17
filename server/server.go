@@ -65,7 +65,7 @@ func (s *Server) StartServer() {
 		})
 	})
 	r.POST("/enumerate", func(c *gin.Context) {
-		s.Storage.ForceEnumerate()
+		s.Storage.ForceEnumerate(c)
 		c.JSON(200, gin.H{
 			"message":     "ok",
 			"video_count": s.Storage.GetVideoCount(),

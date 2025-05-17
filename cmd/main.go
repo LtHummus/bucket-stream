@@ -1,16 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"path"
 	"strings"
-	"time"
 
-	"github.com/lthummus/bucket-stream/config"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+
+	"github.com/lthummus/bucket-stream/config"
 
 	"github.com/lthummus/bucket-stream/notifier"
 	"github.com/lthummus/bucket-stream/server"
@@ -43,7 +43,6 @@ func main() {
 		FullTimestamp: true,
 	})
 	log.Info("hello world!")
-	rand.Seed(time.Now().Unix())
 
 	config.ReadConfig()
 
@@ -85,7 +84,7 @@ func main() {
 	}
 
 	// initialize video storage
-	storage := videostorage.New(bucketName)
+	storage := videostorage.New(context.Background(), bucketName)
 	log.WithField("bucket", bucketName).Info("video storage initialized")
 
 	notifierURLs := viper.GetStringSlice("notification_urls")
@@ -114,7 +113,7 @@ func main() {
 	for {
 		// pick a video
 		log.Info("starting cycle")
-		pickedVideo, buf := storage.PickVideo()
+		pickedVideo, buf := storage.PickVideo(context.Background())
 		log.WithFields(log.Fields{
 			"video": pickedVideo,
 		}).Info("winner picked")
