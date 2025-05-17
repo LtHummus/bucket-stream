@@ -99,7 +99,7 @@ func main() {
 	// start streamer
 	strm := streamer.Streamer{
 		FfmpegPath:     ffmpegPath,
-		TwitchEndpoint: twitchEndpoint,
+		StreamEndpoint: twitchEndpoint,
 	}
 
 	// start server
