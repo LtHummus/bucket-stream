@@ -51,7 +51,10 @@ func New(cfg config.StreamConfiguration,
 	if cfg.TwitchCredentials.ClientID != "" {
 		tAPI = &twitch.Api{Credentials: &cfg.TwitchCredentials}
 		tAPI.GetUserInfo()
-		trueEndpoint = tAPI.GetClosestTwitchEndpoint()
+		trueEndpoint = tAPI.GetTwitchEndpointUrl()
+		log.WithFields(log.Fields{
+			"name": cfg.Name,
+		}).Info("using twitch")
 	}
 
 	var notifiers []notifier.Notifier

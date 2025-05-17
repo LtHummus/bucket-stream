@@ -33,8 +33,12 @@ var _ Storage = &VideoStorage{}
 // construct the struct as well as kick off an update thread that periodically polls the S3 bucket for videos.
 // Any object without the .flv extension is ignored. The polling period defaults to once every 24 hours, but can
 // be overridden by the VIDEO_ENUMERATION_PERIOD_MINUTES environment variable
-func New(ctx context.Context, bucket string) *VideoStorage {
-	cfg, err := config.LoadDefaultConfig(ctx)
+func New(ctx context.Context, bucket string, region string) *VideoStorage {
+	log.WithFields(log.Fields{
+		"bucket": bucket,
+		"region": region,
+	}).Info("initializing storage bucket")
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		panic(err)
 	}

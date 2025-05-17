@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -17,20 +16,21 @@ import (
 )
 
 func handleAuth() {
-	fmt.Printf("handling auth...\n")
-	fmt.Printf("go to\n%s\n\n", twitch.GenerateAuthUrl())
-	fmt.Printf("Authorization code: ")
-
-	var code string
-	_, err := fmt.Scanf("%s", &code)
-	if err != nil {
-		log.WithError(err).Warn("could not read input")
-	}
-
-	err = twitch.Handshake(code)
-	if err != nil {
-		log.WithError(err).Warn("could not update tokens")
-	}
+	panic("currently broken while i refactor")
+	//fmt.Printf("handling auth...\n")
+	//fmt.Printf("go to\n%s\n\n", twitch.GenerateAuthUrl())
+	//fmt.Printf("Authorization code: ")
+	//
+	//var code string
+	//_, err := fmt.Scanf("%s", &code)
+	//if err != nil {
+	//	log.WithError(err).Warn("could not read input")
+	//}
+	//
+	//err = twitch.Handshake(code)
+	//if err != nil {
+	//	log.WithError(err).Warn("could not update tokens")
+	//}
 
 }
 
@@ -69,8 +69,13 @@ func main() {
 		log.Fatal("environment variable VIDEO_BUCKET_NAME is empty")
 	}
 
+	region := viper.GetString("s3.region")
+	if region == "" {
+		log.Fatal("region not set in config file")
+	}
+
 	// initialize video storage
-	storage := videostorage.New(context.Background(), bucketName)
+	storage := videostorage.New(context.Background(), bucketName, region)
 	log.WithField("bucket", bucketName).Info("video storage initialized")
 
 	streamers := make([]*streamer.Streamer, len(fullConfig.Streams))
