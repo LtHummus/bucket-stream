@@ -13,38 +13,18 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-)
 
-const (
-	twitchClientIdConfKey     = "twitch.client_id"
-	twitchAuthTokenConfKey    = "twitch.auth_token"
-	twitchRefreshTokenConfKey = "twitch.refresh_token"
-	twitchClientSecretConfKey = "twitch.client_secret"
+	"github.com/lthummus/bucket-stream/config"
 )
 
 type Api struct {
 	BroadcasterId int
+	Credentials   *config.TwitchCredentials
 }
 
-func getTwitchClientId() string {
-	return viper.GetString(twitchClientIdConfKey)
-}
-
-func getTwitchAuthToken() string {
-	return viper.GetString(twitchAuthTokenConfKey)
-}
-
-func getTwitchRefreshToken() string {
-	return viper.GetString(twitchRefreshTokenConfKey)
-}
-
-func getTwitchClientSecret() string {
-	return viper.GetString(twitchClientSecretConfKey)
-}
-
-func updateTwitchCredentials(accessToken string, refreshToken string) {
-	viper.Set(twitchAuthTokenConfKey, accessToken)
-	viper.Set(twitchRefreshTokenConfKey, refreshToken)
+func (a *Api) updateTwitchCredentials(accessToken string, refreshToken string) {
+	a.Credentials.AuthToken = accessToken
+	a.Credentials.RefreshToken = refreshToken
 	err := viper.WriteConfig()
 	if err != nil {
 		log.WithError(err).Warn("could not write config")
@@ -62,9 +42,9 @@ func (a *Api) refreshTwitchToken() error {
 
 	payload := url.Values{}
 	payload.Set("grant_type", "refresh_token")
-	payload.Set("refresh_token", getTwitchRefreshToken())
-	payload.Set("client_id", getTwitchClientId())
-	payload.Set("client_secret", getTwitchClientSecret())
+	payload.Set("refresh_token", a.Credentials.RefreshToken)
+	payload.Set("client_id", a.Credentials.ClientID)
+	payload.Set("client_secret", a.Credentials.ClientSecret)
 
 	req, err := http.NewRequest(http.MethodPost, "https://id.twitch.tv/oauth2/token", strings.NewReader(payload.Encode()))
 	if err != nil {
@@ -95,20 +75,20 @@ func (a *Api) refreshTwitchToken() error {
 		return err
 	}
 
-	updateTwitchCredentials(refreshResult.AccessToken, refreshResult.RefreshToken)
+	a.updateTwitchCredentials(refreshResult.AccessToken, refreshResult.RefreshToken)
 	log.Info("twitch tokens updated")
 
 	return nil
 }
 
-func validateTwitchToken() (bool, error) {
+func (a *Api) validateTwitchToken() (bool, error) {
 	req, err := http.NewRequest(http.MethodGet, "https://id.twitch.tv/oauth2/validate", nil)
 	if err != nil {
 		log.WithError(err).Warn("could not create validation payload")
 		return false, err
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", getTwitchAuthToken()))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.Credentials.AuthToken))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -130,7 +110,7 @@ func validateTwitchToken() (bool, error) {
 // the HTTP response code is 204 NO CONTENT, then the function returns without attempting to decode the body and `nil` can
 // be passed in as the second parameter. This function assumes that client id and auth token is set.
 func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
-	valid, err := validateTwitchToken()
+	valid, err := a.validateTwitchToken()
 	if err != nil {
 		log.WithError(err).Warn("could not validate twitch token")
 		return err
@@ -144,8 +124,8 @@ func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
 		}
 	}
 
-	req.Header.Set("Client-id", getTwitchClientId())
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", getTwitchAuthToken()))
+	req.Header.Set("Client-id", a.Credentials.ClientID)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.Credentials.AuthToken))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -187,11 +167,6 @@ func (a *Api) doTwitchRequest(req *http.Request, res interface{}) error {
 
 // GetUserInfo updates the BroadcasterId for the Api struct for the user that owns the given AuthToken.
 func (a *Api) GetUserInfo() {
-	if getTwitchClientId() == "" || getTwitchAuthToken() == "" {
-		log.Warn("twitch api config not set...skipping getting user info")
-		return
-	}
-
 	log.Info("getting user id")
 
 	url := "https://api.twitch.tv/helix/users"
@@ -245,11 +220,6 @@ func (a *Api) GetTwitchEndpointUrl() string {
 
 // GetClosestTwitchEndpoint gets the closest ingestion endpoint URL template from Twitch
 func (a *Api) GetClosestTwitchEndpoint() string {
-	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
-		log.Warn("twitch api config not set...returning empty string")
-		return ""
-	}
-
 	log.Info("starting lookup of twitch ingestion endpoints")
 
 	url := "https://ingest.twitch.tv/ingests"
@@ -283,11 +253,6 @@ func (a *Api) GetClosestTwitchEndpoint() string {
 
 // GetStreamKey fetches the user's stream key from the Twitch API
 func (a *Api) GetStreamKey() string {
-	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
-		log.Warn("twitch api config not set...returning empty string")
-		return ""
-	}
-
 	url := fmt.Sprintf("https://api.twitch.tv/helix/streams/key?broadcaster_id=%d", a.BroadcasterId)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -313,12 +278,8 @@ func (a *Api) GetStreamKey() string {
 
 // UpdateStreamTitle sets the title of the user's stream to the given stream
 func (a *Api) UpdateStreamTitle(title string) {
-	if getTwitchClientId() == "" || getTwitchAuthToken() == "" || a.BroadcasterId == 0 {
-		log.WithField("video", title).Warn("twitch api config not set...skipping title update")
-		return
-	}
 
-	payload, err := json.Marshal(map[string]interface{}{
+	payload, err := json.Marshal(map[string]any{
 		"title": title,
 	})
 	if err != nil {

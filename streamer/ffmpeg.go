@@ -13,6 +13,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/lthummus/bucket-stream/config"
+	"github.com/lthummus/bucket-stream/notifier"
+	"github.com/lthummus/bucket-stream/twitch"
 	"github.com/lthummus/bucket-stream/videostorage"
 )
 
@@ -22,16 +24,52 @@ type Streamer struct {
 	name string
 
 	storage          videostorage.Storage
-	notificationURLs []string
+	notificationURLs []notifier.Notifier
 
 	ffmpegPath     string
 	streamEndpoint string
-	twitchCredentials *config.TwitchCredentials
+	twitch         *twitch.Api
 
 	videoStart time.Time
 	playCount  int
 
 	video string
+}
+
+func New(cfg config.StreamConfiguration,
+	storage videostorage.Storage,
+	ffmpegPath string) *Streamer {
+
+	if cfg.Endpoint == "" && cfg.TwitchCredentials.ClientID == "" {
+		log.WithField("name", cfg.Name).Fatal("one of stream endpoint or twitch credentials should be set")
+	}
+
+	var tAPI *twitch.Api
+
+	trueEndpoint := cfg.Endpoint
+
+	if cfg.TwitchCredentials.ClientID != "" {
+		tAPI = &twitch.Api{Credentials: &cfg.TwitchCredentials}
+		tAPI.GetUserInfo()
+		trueEndpoint = tAPI.GetClosestTwitchEndpoint()
+	}
+
+	var notifiers []notifier.Notifier
+	for _, curr := range cfg.NotificationURLs {
+		notifiers = append(notifiers, &notifier.Webhook{
+			Url: curr,
+		})
+	}
+
+	return &Streamer{
+		lock:             &sync.Mutex{},
+		name:             cfg.Name,
+		storage:          storage,
+		notificationURLs: notifiers,
+		ffmpegPath:       ffmpegPath,
+		streamEndpoint:   trueEndpoint,
+		twitch:           tAPI,
+	}
 }
 
 func (s *Streamer) Run() {
@@ -44,9 +82,23 @@ func (s *Streamer) Run() {
 		}).Info("selected winner")
 
 		streamTitle := strings.TrimPrefix(strings.TrimSuffix(path.Base(pickedVideo), path.Ext(pickedVideo)), "/")
-		if s.twitchCredentials != nil {
-			go
+		if s.twitch != nil {
+			go s.twitch.UpdateStreamTitle(streamTitle)
 		}
+
+		for _, curr := range s.notificationURLs {
+			go curr.Notify(streamTitle)
+		}
+
+		log.WithFields(log.Fields{
+			"name":  s.name,
+			"video": pickedVideo,
+		}).Info("opened stream")
+		s.StartFfmpegStream(pickedVideo, buf)
+		log.WithFields(log.Fields{
+			"name":  s.name,
+			"video": pickedVideo,
+		}).Info("cycle complete")
 	}
 }
 
@@ -62,6 +114,20 @@ func (s *Streamer) GetVideo() string {
 	defer s.lock.Unlock()
 
 	return s.video
+}
+
+func (s *Streamer) GetVideoStart() time.Time {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return s.videoStart
+}
+
+func (s *Streamer) PlayCount() int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return s.playCount
 }
 
 func captureOutput(r io.Reader) {
@@ -90,8 +156,8 @@ func captureOutput(r io.Reader) {
 func (s *Streamer) StartFfmpegStream(name string, videoInput io.ReadCloser) {
 	s.lock.Lock()
 	s.video = name
-	s.VideoStart = time.Now()
-	s.PlayCount += 1
+	s.videoStart = time.Now()
+	s.playCount += 1
 	s.lock.Unlock()
 
 	var command = []string{
@@ -107,12 +173,12 @@ func (s *Streamer) StartFfmpegStream(name string, videoInput io.ReadCloser) {
 		"flv",
 		"-flvflags", // don't complain about not being
 		"no_duration_filesize",
-		s.StreamEndpoint,
+		s.streamEndpoint,
 	}
 	log.WithField("video", name).Info("beginning stream")
 
 	// build the process
-	r := exec.Command(s.FfmpegPath, command...)
+	r := exec.Command(s.ffmpegPath, command...)
 	r.Stdin = videoInput          // hook the video byte stream to the stdin of ffmpeg
 	stderr, err := r.StderrPipe() // set up reading from ffmpeg's output
 	if err != nil {

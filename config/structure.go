@@ -7,12 +7,14 @@ type TwitchCredentials struct {
 	RefreshToken string `mapstructure:"refresh_token"`
 }
 
+type StreamConfiguration struct {
+	Name              string            `mapstructure:"name"`
+	NotificationURLs  []string          `mapstructure:"notification_urls"`
+	Endpoint          string            `mapstrucutre:"endpoint"`
+	TwitchCredentials TwitchCredentials `mapstructure:"twitch"`
+}
+
 type Configuration struct {
-	Bucket  string `mapstructure:"bucket"`
-	Streams []struct {
-		Name              string            `mapstructure:"name"`
-		NotificationURLs  []string          `mapstructure:"notification_urls"`
-		Endpoint          string            `mapstrucutre:"endpoint"`
-		TwitchCredentials TwitchCredentials `mapstructure:"twitch"`
-	} `mapstructure:"streams"`
+	Bucket  string                `mapstructure:"bucket"`
+	Streams []StreamConfiguration `mapstructure:"streams"`
 }

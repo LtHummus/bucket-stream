@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -16,14 +15,12 @@ import (
 
 type Server struct {
 	Storage  videostorage.Storage
-	Streamer *streamer.Streamer
+	Streamer []*streamer.Streamer
 
-	shouldContinue atomic.Bool
-	start          time.Time
+	start time.Time
 }
 
 func (s *Server) StartServer() {
-	s.shouldContinue.Store(true)
 	s.start = time.Now()
 
 	log.Info("initializing web server")
@@ -36,22 +33,21 @@ func (s *Server) StartServer() {
 
 		w.Write([]byte(`{"message":"ok"}`))
 	})
-	mux.HandleFunc("PUT /continue/no", func(w http.ResponseWriter, r *http.Request) {
-		s.SetContinue(false)
-		w.WriteHeader(http.StatusNoContent)
-	})
-	mux.HandleFunc("PUT /continue/yes", func(w http.ResponseWriter, r *http.Request) {
-		s.SetContinue(true)
-		w.WriteHeader(http.StatusNoContent)
-	})
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
+		streamerData := make([]map[string]any, len(s.Streamer))
+		for i, curr := range s.Streamer {
+			m := map[string]any{
+				"currently_playing":      curr.GetVideo(),
+				"time_since_video_start": time.Since(curr.GetVideoStart()),
+				"videos_played":          curr.PlayCount(),
+			}
+			streamerData[i] = m
+		}
+
 		res := map[string]any{
-			"total_uptime":           time.Since(s.start).String(),
-			"should_continue":        s.ShouldContinue(),
-			"video_count":            s.Storage.GetVideoCount(),
-			"currently_playing":      s.Streamer.GetVideo(),
-			"time_since_video_start": time.Since(s.Streamer.VideoStart).String(),
-			"videos_played":          s.Streamer.PlayCount,
+			"total_uptime": time.Since(s.start).String(),
+			"video_count":  s.Storage.GetVideoCount(),
+			"streams":      streamerData,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -78,13 +74,4 @@ func (s *Server) StartServer() {
 	if err != nil {
 		log.WithError(err).Error("could not start server")
 	}
-}
-
-func (s *Server) SetContinue(cont bool) {
-	log.WithField("new_value", cont).Info("updating continue")
-	s.shouldContinue.Store(cont)
-}
-
-func (s *Server) ShouldContinue() bool {
-	return s.shouldContinue.Load()
 }
