@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -25,20 +26,22 @@ func ReadConfig() {
 	}
 }
 
-func SaveConfig() {
+func SaveConfig() error {
 	yamlData, err := yaml.Marshal(ReadConfiguration.AsMap())
 	if err != nil {
-		log.WithError(err).Fatal("could not marshal config data")
+		return fmt.Errorf("config: SaveConfig: could not marshall config: %w", err)
 	}
 
 	f, err := os.OpenFile(viper.ConfigFileUsed(), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
-		log.WithError(err).WithField("config_file", viper.ConfigFileUsed()).Fatal("could not open file for writing")
+		return fmt.Errorf("config: SaveConfig: could not create file for writing: %w", err)
 	}
 	defer f.Close()
 
 	_, err = f.Write(yamlData)
 	if err != nil {
-		log.WithError(err).WithField("config_file", viper.ConfigFileUsed()).Fatal("could not write file")
+		return fmt.Errorf("config: SaveConfig: could not write new config data: %w", err)
 	}
+
+	return nil
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/lthummus/bucket-stream/config"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const redirectUrl = "http://localhost"
@@ -69,5 +68,5 @@ func Handshake(code string, twitchCreds *config.TwitchCredentials) error {
 	twitchCreds.AuthToken = tokenPayload.AccessToken
 	twitchCreds.RefreshToken = tokenPayload.RefreshToken
 
-	return viper.WriteConfig()
+	return config.SaveConfig()
 }
