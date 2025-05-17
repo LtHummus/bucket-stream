@@ -156,9 +156,9 @@ func captureOutput(r io.Reader) {
 // StartFfmpegStream starts streaming to twitch. This requires a path to the ffmpeg executable, the twitch endpoint,
 // the video's name (for logging) and an `io.ReadCloser` to read video data from. The video is assumed to be in an
 // FLV container with codecs that Twitch is happy with (see README for more details).
-func (s *Streamer) StartFfmpegStream(name string, videoInput io.ReadCloser) {
+func (s *Streamer) StartFfmpegStream(videoName string, videoInput io.ReadCloser) {
 	s.lock.Lock()
-	s.video = name
+	s.video = videoName
 	s.videoStart = time.Now()
 	s.playCount += 1
 	s.lock.Unlock()
@@ -178,17 +178,17 @@ func (s *Streamer) StartFfmpegStream(name string, videoInput io.ReadCloser) {
 		"no_duration_filesize",
 		s.streamEndpoint,
 	}
-	log.WithField("video", name).Info("beginning stream")
+	log.WithField("name", s.name).WithField("video_name", videoName).Info("beginning stream")
 
 	// build the process
 	r := exec.Command(s.ffmpegPath, command...)
 	r.Stdin = videoInput          // hook the video byte stream to the stdin of ffmpeg
 	stderr, err := r.StderrPipe() // set up reading from ffmpeg's output
 	if err != nil {
-		log.WithField("video", name).WithError(err).Fatal("error opening stderr")
+		log.WithField("video", videoName).WithError(err).Fatal("error opening stderr")
 	}
 	if err = r.Start(); err != nil {
-		log.WithField("video", name).WithError(err).Fatal("error starting ffmpeg")
+		log.WithField("name", s.name).WithField("video_name", videoName).WithError(err).Fatal("error starting ffmpeg")
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -198,16 +198,16 @@ func (s *Streamer) StartFfmpegStream(name string, videoInput io.ReadCloser) {
 	}()
 
 	wg.Wait() // wait until stream is done
-	log.WithField("video", name).Info("Waiting for process to exit")
+	log.WithField("name", s.name).WithField("video_name", videoName).Info("Waiting for process to exit")
 	err = r.Wait()
 	if err != nil {
-		log.WithField("video", name).WithError(err).Fatal("error on wait")
+		log.WithField("video", videoName).WithError(err).Fatal("error on wait")
 	}
 	// close everything
 	err = videoInput.Close()
 	if err != nil {
-		log.WithField("video", name).WithError(err).Fatal("error closing video input")
+		log.WithField("video", videoName).WithError(err).Fatal("error closing video input")
 	}
-	log.WithField("video", name).Info("closed video input stream")
-	log.WithField("video", name).Info("stream finished")
+	log.WithField("name", s.name).WithField("video_name", videoName).Info("closed video input stream")
+	log.WithField("name", s.name).WithField("video_name", videoName).Info("stream finished")
 }
