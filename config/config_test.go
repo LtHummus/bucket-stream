@@ -10,7 +10,9 @@ import (
 )
 
 var sampleConfig = `
-bucket: sample-storage-bucket
+s3: 
+    bucket: sample-storage-bucket
+    region: us-east-1
 streams:
   - name: sample1
     notification_urls:
@@ -33,7 +35,8 @@ func TestConfig(t *testing.T) {
 	err = viper.Unmarshal(&c)
 	require.NoError(t, err)
 
-	assert.Equal(t, "sample-storage-bucket", c.Bucket)
+	assert.Equal(t, "sample-storage-bucket", c.S3.Bucket)
+	assert.Equal(t, "us-east-1", c.S3.Region)
 	assert.Len(t, c.Streams, 2)
 
 	assert.Equal(t, "sample1", c.Streams[0].Name)

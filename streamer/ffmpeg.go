@@ -49,7 +49,7 @@ func New(cfg config.StreamConfiguration,
 	trueEndpoint := cfg.Endpoint
 
 	if cfg.TwitchCredentials.ClientID != "" {
-		tAPI = &twitch.Api{Credentials: &cfg.TwitchCredentials}
+		tAPI = &twitch.Api{Credentials: cfg.TwitchCredentials}
 		tAPI.GetUserInfo()
 		trueEndpoint = tAPI.GetTwitchEndpointUrl()
 		log.WithFields(log.Fields{
